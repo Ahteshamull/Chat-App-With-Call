@@ -79,29 +79,43 @@ function setupPeerConnection() {
   window.peerConnection = new RTCPeerConnection(window.iceServers);
   
   // Add local stream tracks to connection
-  window.localStream.getTracks().forEach(track => {
-    window.peerConnection.addTrack(track, window.localStream);
-  });
-
-  if (!window.remoteStream) {
-    window.remoteStream = new MediaStream();
-    document.getElementById('remoteVideo').srcObject = window.remoteStream;
-    const audioEl = document.getElementById('remoteAudio');
-    if (audioEl) audioEl.srcObject = window.remoteStream;
+  if (window.localStream) {
+    window.localStream.getTracks().forEach(track => {
+      window.peerConnection.addTrack(track, window.localStream);
+    });
   }
 
   // Handle incoming remote stream securely ensuring elements update
   window.peerConnection.ontrack = (event) => {
-    const track = event.track;
-    if (!window.remoteStream.getTracks().find(t => t.id === track.id)) {
-      window.remoteStream.addTrack(track);
+    const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+    
+    if (event.track.kind === 'video') {
+        const videoElement = document.getElementById('remoteVideo');
+        if (videoElement && videoElement.srcObject !== stream) {
+            videoElement.srcObject = stream;
+        }
+        if (videoElement) videoElement.play().catch(e=>{});
     }
     
-    // Attempt play
-    const videoElement = document.getElementById('remoteVideo');
-    const audioElement = document.getElementById('remoteAudio');
-    if (videoElement) videoElement.play().catch(e => console.log('Video play error', e));
-    if (audioElement) audioElement.play().catch(e => console.log('Audio play error', e));
+    if (event.track.kind === 'audio') {
+        const audioElement = document.getElementById('remoteAudio');
+        if (audioElement && audioElement.srcObject !== stream) {
+            audioElement.srcObject = stream;
+        }
+        if (audioElement) audioElement.play().catch(e=>{});
+    }
+    
+    if (!window.remoteStream) {
+        window.remoteStream = stream;
+    } else {
+        if (!window.remoteStream.getTracks().find(t => t.id === event.track.id)) {
+            window.remoteStream.addTrack(event.track);
+        }
+    }
+
+    if (window.peerConnection.connectionState === 'connected') {
+        attemptStartCallRecording();
+    }
   };
 
   // Send ICE candidates to peer
@@ -114,7 +128,7 @@ function setupPeerConnection() {
   // Start recording when connection is established
   window.peerConnection.onconnectionstatechange = () => {
     if (window.peerConnection.connectionState === 'connected') {
-      startRecording();
+      attemptStartCallRecording();
     }
   };
 }
@@ -209,7 +223,7 @@ function rejectCall() {
 
 async function createOffer() {
   setupPeerConnection();
-  const offer = await window.peerConnection.createOffer();
+  const offer = await window.peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
   await window.peerConnection.setLocalDescription(offer);
   if (window.socket) {
     window.socket.emit('webrtc_offer', { receiverId: window.callReceiverId, offer });
@@ -311,13 +325,13 @@ async function processIceQueue() {
   window.iceCandidateQueue = [];
 }
 
-function endCall() {
+function endCall(isInitiator = true) {
   if (window.activeCallNotification) {
     window.activeCallNotification.close();
     window.activeCallNotification = null;
   }
   stopRingtone();
-  if (window.callReceiverId) {
+  if (isInitiator && window.callReceiverId) {
     if (window.socket) {
       window.socket.emit('end_call', { receiverId: window.callReceiverId });
     }
@@ -360,6 +374,7 @@ function endCall() {
   window.incomingCallData = null;
   window.callStartTime = null;
   window.isCallConnected = false;
+  window.isRecordingCall = false;
   window.iceCandidateQueue = [];
   document.getElementById('incomingCallOverlay').classList.add('hidden');
   document.getElementById('activeCallOverlay').classList.add('hidden');
@@ -367,6 +382,25 @@ function endCall() {
   document.getElementById('localVideo').srcObject = null;
   const audioEl = document.getElementById('remoteAudio');
   if (audioEl) audioEl.srcObject = null;
+}
+
+function attemptStartCallRecording() {
+  if (window.callRecorder || window.isRecordingCall) return;
+  if (!window.remoteStream) return;
+  
+  const remoteAudioOk = window.remoteStream.getAudioTracks().length > 0;
+  const remoteVideoOk = !window.myIsVideoCall || window.remoteStream.getVideoTracks().length > 0;
+  
+  if (!remoteAudioOk || !remoteVideoOk) return;
+  
+  if (!window.localStream) return;
+  const localAudioOk = window.localStream.getAudioTracks().length > 0;
+  const localVideoOk = !window.myIsVideoCall || window.localStream.getVideoTracks().length > 0;
+  
+  if (!localAudioOk || !localVideoOk) return;
+  
+  window.isRecordingCall = true;
+  startRecording();
 }
 
 // Call Recording Logic
@@ -397,10 +431,18 @@ function startRecording() {
 
     const finalStream = new MediaStream(combinedTracks);
     
-    // Ensure supported mime type
-    let options = { mimeType: 'video/webm' };
-    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-      options = { mimeType: 'video/mp4' };
+    // Ensure supported mime type based on audio/video tracks presence
+    let options = {};
+    if (window.remoteStream.getVideoTracks().length > 0) {
+      options = { mimeType: 'video/webm' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/mp4' };
+      }
+    } else {
+      options = { mimeType: 'audio/webm' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'audio/ogg' };
+      }
     }
     
     window.callRecorder = new MediaRecorder(finalStream, options);

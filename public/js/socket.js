@@ -6,6 +6,16 @@ function initSocket() {
     auth: { token: window.token }
   });
 
+  window.socket.on('connect_error', (err) => {
+    console.error('Socket connection error:', err.message);
+    if (err.message.includes('Authentication error')) {
+      alert('Session expired. Please login again.');
+      if (typeof window.logout === 'function') {
+        window.logout();
+      }
+    }
+  });
+
   window.socket.on('connect', () => {
     console.log('Socket connected:', window.socket.id);
   });
@@ -110,7 +120,7 @@ function initSocket() {
       window.activeCallNotification = null;
     }
     if (typeof window.endCall === 'function') {
-      window.endCall();
+      window.endCall(false);
     }
   });
 }

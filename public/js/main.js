@@ -21,14 +21,28 @@ window.isCallConnected = false;
 window.myIsVideoCall = false; // To track if we initiated a video or audio call
 window.callRecorder = null;
 window.recordedChunks = [];
-window.iceServers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+window.iceServers = { 
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ] 
+    };
 window.isScreenSharing = false;
 window.screenStream = null;
 window.iceCandidateQueue = [];
+window.isRecordingCall = false;
 
 window.audioCtx = null;
 window.ringInterval = null;
 window.activeCallNotification = null;
+
+// Global click listener to resume AudioContext (helps bypass autoplay policies)
+document.addEventListener('click', () => {
+  if (window.audioCtx && window.audioCtx.state === 'suspended') {
+    window.audioCtx.resume();
+  }
+});
 
 // Request Notification Permission
 window.requestNotificationPermission = function() {
