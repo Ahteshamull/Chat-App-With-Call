@@ -204,6 +204,7 @@
     <div class="video-container" id="videoContainer">
       <video id="remoteVideo" autoplay playsinline></video>
       <video id="localVideo" autoplay muted playsinline></video>
+      <audio id="remoteAudio" autoplay></audio>
     </div>
 
     <div class="audio-container hidden" id="audioContainer">
@@ -747,14 +748,25 @@
         peerConnection.addTrack(track, localStream);
       });
 
-      // Handle incoming remote stream securely ensuring video element updates
+      if (!remoteStream) {
+        remoteStream = new MediaStream();
+        document.getElementById('remoteVideo').srcObject = remoteStream;
+        const audioEl = document.getElementById('remoteAudio');
+        if (audioEl) audioEl.srcObject = remoteStream;
+      }
+
+      // Handle incoming remote stream securely ensuring elements update
       peerConnection.ontrack = (event) => {
-        const videoElement = document.getElementById('remoteVideo');
-        if (videoElement.srcObject !== event.streams[0]) {
-          videoElement.srcObject = event.streams[0];
-          remoteStream = event.streams[0];
-          videoElement.play().catch(e => console.log('Autoplay prevented', e));
+        const track = event.track;
+        if (!remoteStream.getTracks().find(t => t.id === track.id)) {
+          remoteStream.addTrack(track);
         }
+        
+        // Attempt play
+        const videoElement = document.getElementById('remoteVideo');
+        const audioElement = document.getElementById('remoteAudio');
+        if (videoElement) videoElement.play().catch(e => console.log('Video play error', e));
+        if (audioElement) audioElement.play().catch(e => console.log('Audio play error', e));
       };
 
       // Send ICE candidates to peer
@@ -980,6 +992,9 @@
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
       }
+      if (remoteStream) {
+        remoteStream = null;
+      }
       iceCandidateQueue = [];
       callReceiverId = null;
       incomingCallData = null;
@@ -989,6 +1004,8 @@
       document.getElementById('activeCallOverlay').classList.add('hidden');
       document.getElementById('remoteVideo').srcObject = null;
       document.getElementById('localVideo').srcObject = null;
+      const audioEl = document.getElementById('remoteAudio');
+      if (audioEl) audioEl.srcObject = null;
     }
 
     // Call Recording Logic
