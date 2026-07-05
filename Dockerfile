@@ -30,8 +30,8 @@ RUN npm install --omit=dev
 # Copy compiled dist folder from builder stage
 COPY --from=builder /app/dist ./dist
 
-# Copy the frontend HTML file (so the test chat works in production)
-COPY index.html ./
+# Copy the frontend static assets (so the test chat works in production)
+COPY public/ ./public/
 
 # Expose port (default 5000)
 EXPOSE 5059
