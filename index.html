@@ -201,10 +201,10 @@
       <h3 id="callStatusText">Calling...</h3>
     </div>
     
+    <audio id="remoteAudio" autoplay></audio>
     <div class="video-container" id="videoContainer">
       <video id="remoteVideo" autoplay playsinline></video>
       <video id="localVideo" autoplay muted playsinline></video>
-      <audio id="remoteAudio" autoplay></audio>
     </div>
 
     <div class="audio-container hidden" id="audioContainer">
@@ -245,13 +245,27 @@
     let myIsVideoCall = false; // To track if we initiated a video or audio call
     let callRecorder = null;
     let recordedChunks = [];
-    const iceServers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    const iceServers = { 
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ] 
+    };
     let isScreenSharing = false;
     let screenStream = null;
     let iceCandidateQueue = [];
+    let isRecordingCall = false;
 
     let audioCtx = null;
     let ringInterval = null;
+
+    // Global click listener to resume AudioContext (helps bypass autoplay policies)
+    document.addEventListener('click', () => {
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    });
 
     function playRingtone(isOutgoing = false) {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -467,6 +481,14 @@
         auth: { token }
       });
 
+      socket.on('connect_error', (err) => {
+        console.error('Socket connection error:', err.message);
+        if (err.message.includes('Authentication error')) {
+          alert('Session expired. Please login again.');
+          logout();
+        }
+      });
+
       socket.on('connect', () => {
         console.log('Socket connected:', socket.id);
       });
@@ -546,7 +568,7 @@
       socket.on('end_call', () => {
         // We received end_call from the other side
         stopRingtone();
-        endCall();
+        endCall(false);
       });
 
     }
@@ -744,29 +766,43 @@
       peerConnection = new RTCPeerConnection(iceServers);
       
       // Add local stream tracks to connection
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-      });
-
-      if (!remoteStream) {
-        remoteStream = new MediaStream();
-        document.getElementById('remoteVideo').srcObject = remoteStream;
-        const audioEl = document.getElementById('remoteAudio');
-        if (audioEl) audioEl.srcObject = remoteStream;
+      if (localStream) {
+        localStream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, localStream);
+        });
       }
 
       // Handle incoming remote stream securely ensuring elements update
       peerConnection.ontrack = (event) => {
-        const track = event.track;
-        if (!remoteStream.getTracks().find(t => t.id === track.id)) {
-          remoteStream.addTrack(track);
+        const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+        
+        if (event.track.kind === 'video') {
+            const videoElement = document.getElementById('remoteVideo');
+            if (videoElement && videoElement.srcObject !== stream) {
+                videoElement.srcObject = stream;
+            }
+            if (videoElement) videoElement.play().catch(e=>{});
         }
         
-        // Attempt play
-        const videoElement = document.getElementById('remoteVideo');
-        const audioElement = document.getElementById('remoteAudio');
-        if (videoElement) videoElement.play().catch(e => console.log('Video play error', e));
-        if (audioElement) audioElement.play().catch(e => console.log('Audio play error', e));
+        if (event.track.kind === 'audio') {
+            const audioElement = document.getElementById('remoteAudio');
+            if (audioElement && audioElement.srcObject !== stream) {
+                audioElement.srcObject = stream;
+            }
+            if (audioElement) audioElement.play().catch(e=>{});
+        }
+        
+        if (!remoteStream) {
+            remoteStream = stream;
+        } else {
+            if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream.addTrack(event.track);
+            }
+        }
+
+        if (peerConnection.connectionState === 'connected') {
+            attemptStartCallRecording();
+        }
       };
 
       // Send ICE candidates to peer
@@ -779,7 +815,7 @@
       // Start recording when connection is established
       peerConnection.onconnectionstatechange = () => {
         if (peerConnection.connectionState === 'connected') {
-          startRecording();
+          attemptStartCallRecording();
         }
       };
     }
@@ -860,7 +896,7 @@
 
     async function createOffer() {
       setupPeerConnection();
-      const offer = await peerConnection.createOffer();
+      const offer = await peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       await peerConnection.setLocalDescription(offer);
       socket.emit('webrtc_offer', { receiverId: callReceiverId, offer });
     }
@@ -956,9 +992,9 @@
       iceCandidateQueue = [];
     }
 
-    function endCall() {
+    function endCall(isInitiator = true) {
       stopRingtone();
-      if (callReceiverId) {
+      if (isInitiator && callReceiverId) {
         socket.emit('end_call', { receiverId: callReceiverId });
         
         if (!isCallConnected) {
@@ -1000,12 +1036,32 @@
       incomingCallData = null;
       callStartTime = null;
       isCallConnected = false;
+      isRecordingCall = false;
       document.getElementById('incomingCallOverlay').classList.add('hidden');
       document.getElementById('activeCallOverlay').classList.add('hidden');
       document.getElementById('remoteVideo').srcObject = null;
       document.getElementById('localVideo').srcObject = null;
       const audioEl = document.getElementById('remoteAudio');
       if (audioEl) audioEl.srcObject = null;
+    }
+
+    function attemptStartCallRecording() {
+      if (callRecorder || isRecordingCall) return;
+      if (!remoteStream) return;
+      
+      const remoteAudioOk = remoteStream.getAudioTracks().length > 0;
+      const remoteVideoOk = !myIsVideoCall || remoteStream.getVideoTracks().length > 0;
+      
+      if (!remoteAudioOk || !remoteVideoOk) return;
+      
+      if (!localStream) return;
+      const localAudioOk = localStream.getAudioTracks().length > 0;
+      const localVideoOk = !myIsVideoCall || localStream.getVideoTracks().length > 0;
+      
+      if (!localAudioOk || !localVideoOk) return;
+      
+      isRecordingCall = true;
+      startRecording();
     }
 
     // Call Recording Logic
@@ -1036,10 +1092,18 @@
 
         const finalStream = new MediaStream(combinedTracks);
         
-        // Ensure supported mime type
-        let options = { mimeType: 'video/webm' };
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-          options = { mimeType: 'video/mp4' };
+        // Ensure supported mime type based on audio/video tracks presence
+        let options = {};
+        if (remoteStream.getVideoTracks().length > 0) {
+          options = { mimeType: 'video/webm' };
+          if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options = { mimeType: 'video/mp4' };
+          }
+        } else {
+          options = { mimeType: 'audio/webm' };
+          if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options = { mimeType: 'audio/ogg' };
+          }
         }
         
         callRecorder = new MediaRecorder(finalStream, options);
