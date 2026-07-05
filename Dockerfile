@@ -34,7 +34,7 @@ COPY --from=builder /app/dist ./dist
 COPY index.html ./
 
 # Expose port (default 5000)
-EXPOSE 5000
+EXPOSE 5059
 
 # Start the server
 CMD ["npm", "start"]
