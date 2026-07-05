@@ -36,6 +36,9 @@ app.use(limiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve static assets
+app.use(express.static(path.join(process.cwd(), 'public')));
+
 // Application Routes
 app.use('/api/v1', router);
 
@@ -46,7 +49,7 @@ app.get('/', (req: Request, res: Response) => {
 
 // Serve test HTML client
 app.get('/test-chat', (req: Request, res: Response) => {
-  res.sendFile(path.join(process.cwd(), 'index.html'));
+  res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
 });
 
 // Global Error Handler

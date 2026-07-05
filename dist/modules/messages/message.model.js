@@ -5,7 +5,11 @@ const mongoose_1 = require("mongoose");
 const messageSchema = new mongoose_1.Schema({
     sender: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     receiver: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
-    content: { type: String, required: true },
+    content: { type: String },
+    imageUrl: { type: String },
+    videoUrl: { type: String },
+    audioUrl: { type: String },
+    seen: { type: Boolean, default: false },
     isGroupMessage: { type: Boolean, default: false },
     groupName: { type: String },
 }, {

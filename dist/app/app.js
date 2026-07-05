@@ -7,13 +7,19 @@ const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
+const path_1 = __importDefault(require("path"));
 const routes_1 = __importDefault(require("./routes"));
 const globalErrorHandler_1 = __importDefault(require("../shared/middlewares/globalErrorHandler"));
 const app = (0, express_1.default)();
+// Trust proxy for rate limiting behind reverse proxies (like Vercel, Heroku, etc.)
+app.set('trust proxy', 1);
 // Security Middlewares
-app.use((0, helmet_1.default)());
+app.use((0, helmet_1.default)({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: false,
+}));
 app.use((0, cors_1.default)({
-    origin: '*',
+    origin: true,
     credentials: true,
 }));
 // Rate Limiting
@@ -25,11 +31,17 @@ app.use(limiter);
 // Parsers
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
+// Serve static assets
+app.use(express_1.default.static(path_1.default.join(process.cwd(), 'public')));
 // Application Routes
 app.use('/api/v1', routes_1.default);
 // Root Endpoint
 app.get('/', (req, res) => {
     res.send('Welcome to the Backend API!');
+});
+// Serve test HTML client
+app.get('/test-chat', (req, res) => {
+    res.sendFile(path_1.default.join(process.cwd(), 'public', 'index.html'));
 });
 // Global Error Handler
 app.use(globalErrorHandler_1.default);
