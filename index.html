@@ -42,6 +42,13 @@
     .input-area input { margin: 0; }
     .input-area button { width: auto; margin: 0; }
     
+    .contact-item { padding: 12px; border-radius: 8px; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; gap: 10px; border: 1px solid transparent; }
+    .contact-item:hover { background: #f5f7fa; }
+    .contact-item.active { background: #e6f2ff; border-color: #b3d7ff; }
+    .contact-avatar { width: 40px; height: 40px; min-width: 40px; border-radius: 50%; background: #0084ff; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; text-transform: uppercase; }
+    .contact-name { font-weight: 500; font-size: 15px; color: #1c1e21; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .contact-email { font-size: 12px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
     .image-preview-container { display: flex; align-items: center; gap: 10px; margin: 0 20px 10px 20px; background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #ddd; }
     .image-preview { max-height: 80px; max-width: 80px; border-radius: 4px; object-fit: cover; }
     .remove-preview { background: #ff4d4d; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; }
@@ -119,17 +126,23 @@
 <body>
 
   <!-- Sidebar / Auth -->
-  <div class="card">
-    <h2>1. Login</h2>
-    <input type="email" id="loginEmail" placeholder="Email" value="test@test.com">
-    <input type="password" id="loginPassword" placeholder="Password" value="password123">
-    <button onclick="login()">Login</button>
-    <div id="authStatus" style="color: green; font-weight: bold; margin-bottom: 20px;"></div>
+  <div class="card" style="display: flex; flex-direction: column;">
+    <div id="loginBlock">
+      <h2>Login</h2>
+      <input type="email" id="loginEmail" placeholder="Email" value="test@test.com">
+      <input type="password" id="loginPassword" placeholder="Password" value="password123">
+      <button onclick="login()">Login</button>
+      <div id="authStatus" style="color: green; font-weight: bold; margin-bottom: 20px;"></div>
+    </div>
 
-    <h2>2. Chat Settings</h2>
-    <div style="font-size: 12px; margin-bottom: 5px; color: #555;">Enter the receiver's User ID to start chatting:</div>
-    <input type="text" id="targetId" placeholder="Receiver User ID" value="">
-    <button onclick="loadMessages()">Load Messages</button>
+    <div id="contactsBlock" class="hidden" style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+      <h2 style="margin-bottom: 15px;">Chats</h2>
+      <input type="text" id="searchInput" placeholder="Search contacts..." onkeyup="filterUsers()">
+      <div id="contactsList" style="overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; gap: 5px; margin-top: 10px; padding-right: 5px;">
+        <!-- Contacts injected here -->
+      </div>
+      <input type="hidden" id="targetId" value="">
+    </div>
   </div>
 
   <!-- Chat Area -->
@@ -144,7 +157,7 @@
     </div>
     
     <div class="messages-container" id="messagesContainer">
-      <div style="text-align: center; color: #888; margin-top: 20px;">Login and enter a receiver ID to start</div>
+      <div style="text-align: center; color: #888; margin-top: 20px;">Select a contact to start chatting</div>
     </div>
     <div class="typing-indicator" id="typingIndicator"></div>
     <div id="imagePreviewContainer" class="image-preview-container hidden">
@@ -304,8 +317,10 @@
         if (data.success) {
           token = data.data.token;
           myUserId = data.data.user._id;
-          document.getElementById('authStatus').innerText = 'Logged in successfully!';
+          document.getElementById('loginBlock').classList.add('hidden');
+          document.getElementById('contactsBlock').classList.remove('hidden');
           initSocket();
+          fetchUsers();
         } else {
           alert('Login failed: ' + data.message);
         }
@@ -390,29 +405,79 @@
 
     }
 
+    let allUsers = [];
+
+    // Fetch and display users for contacts list
+    async function fetchUsers() {
+      try {
+        const res = await fetch(`${API_URL}/users`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          // Exclude myself
+          allUsers = data.data.filter(u => u._id !== myUserId);
+          renderUsers(allUsers);
+        }
+      } catch(e) {
+        console.error('Failed to fetch users', e);
+      }
+    }
+
+    function renderUsers(users) {
+      const container = document.getElementById('contactsList');
+      container.innerHTML = '';
+      
+      if (users.length === 0) {
+        container.innerHTML = '<div style="color: #888; text-align: center; padding: 20px;">No contacts found</div>';
+        return;
+      }
+      
+      const currentTarget = document.getElementById('targetId').value;
+      
+      users.forEach(user => {
+        const div = document.createElement('div');
+        div.className = `contact-item ${user._id === currentTarget ? 'active' : ''}`;
+        div.onclick = () => selectContact(user);
+        
+        const initial = (user.name || 'U').charAt(0);
+        
+        div.innerHTML = `
+          <div class="contact-avatar">${initial}</div>
+          <div style="flex-grow: 1; min-width: 0;">
+            <div class="contact-name">${user.name}</div>
+            <div class="contact-email">${user.email}</div>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function filterUsers() {
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      const filtered = allUsers.filter(u => u.name.toLowerCase().includes(query) || u.email.toLowerCase().includes(query));
+      renderUsers(filtered);
+    }
+
+    function selectContact(user) {
+      document.getElementById('targetId').value = user._id;
+      document.getElementById('chatHeaderName').innerText = user.name;
+      document.getElementById('chatHeader').style.display = 'flex';
+      
+      // Update active state in UI
+      renderUsers(allUsers);
+      
+      loadMessages();
+    }
+
     // 2. Load Messages
     async function loadMessages() {
-      if (!token) return alert('Please login first!');
+      if (!token) return;
       const targetId = document.getElementById('targetId').value;
-      if (!targetId) return alert('Enter a target ID');
+      if (!targetId) return;
 
       try {
-        // Fetch target user's name
-        let targetName = targetId;
-        try {
-          const usersRes = await fetch(`${API_URL}/users`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          const usersData = await usersRes.json();
-          if (usersData.success && usersData.data) {
-            const user = usersData.data.find(u => u._id === targetId);
-            if (user) targetName = user.name;
-          }
-        } catch(e) { console.error('Failed to fetch users', e); }
-
-        document.getElementById('chatHeaderName').innerText = targetName;
-        document.getElementById('chatHeader').style.display = 'flex';
-
         // Fetch messages
         const res = await fetch(`${API_URL}/messages/${targetId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
