@@ -89,6 +89,11 @@ export const initSocket = (server: HttpServer) => {
       socket.to(receiverId).emit('call_answered', { senderId });
     });
 
+    socket.on('call_ringing', ({ receiverId }: { receiverId: string }) => {
+      const senderId = socket.data.user.userId.toString();
+      socket.to(receiverId).emit('call_ringing', { senderId });
+    });
+
     socket.on('webrtc_offer', ({ receiverId, offer }: { receiverId: string, offer: any }) => {
       const senderId = socket.data.user.userId.toString();
       socket.to(receiverId).emit('webrtc_offer', { senderId, offer });

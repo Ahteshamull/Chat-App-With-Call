@@ -7,7 +7,7 @@ import { Types } from 'mongoose';
 import { getIo } from '../../socket';
 
 const sendMessage = catchAsync(async (req: Request, res: Response) => {
-  const senderId = req.user?.userId;
+  const senderId = (req as any).user?.userId;
   if (!senderId) throw new ApiError(401, 'Unauthorized');
 
   const payload = {
@@ -34,7 +34,7 @@ const sendMessage = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getMessages = catchAsync(async (req: Request, res: Response) => {
-  const userId = req.user?.userId;
+  const userId = (req as any).user?.userId;
   if (!userId) throw new ApiError(401, 'Unauthorized');
 
   const targetId = req.params.targetId as string;

@@ -224,6 +224,9 @@
     </div>
 
     <div class="call-controls">
+      <button id="screenShareBtn" class="hidden" style="margin: 0; border: none; padding: 15px; border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; background: #0084ff; box-shadow: 0 4px 15px rgba(0, 132, 255, 0.4); cursor: pointer;" onclick="toggleScreenShare()" title="Screen Share">
+        🖥️
+      </button>
       <button class="end-btn" onclick="endCall()" title="End Call">
         <svg fill="white" width="28" height="28" viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
       </button>
@@ -255,6 +258,76 @@
     let callRecorder = null;
     let recordedChunks = [];
     const iceServers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    let isScreenSharing = false;
+    let screenStream = null;
+
+    let audioCtx = null;
+    let ringInterval = null;
+
+    function playRingtone(isOutgoing = false) {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      
+      const playTone = () => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        if (isOutgoing) {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+          osc.frequency.setValueAtTime(480, audioCtx.currentTime);
+          
+          gain.gain.setValueAtTime(0, audioCtx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.1);
+          gain.gain.setValueAtTime(0.3, audioCtx.currentTime + 1.5);
+          gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1.6);
+          
+          osc.start(audioCtx.currentTime);
+          osc.stop(audioCtx.currentTime + 1.6);
+        } else {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+          osc.frequency.setValueAtTime(800, audioCtx.currentTime + 0.1);
+          
+          gain.gain.setValueAtTime(0, audioCtx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + 0.05);
+          gain.gain.setValueAtTime(0.1, audioCtx.currentTime + 0.4);
+          gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.45);
+          
+          osc.start(audioCtx.currentTime);
+          osc.stop(audioCtx.currentTime + 0.5);
+          
+          const osc2 = audioCtx.createOscillator();
+          const gain2 = audioCtx.createGain();
+          osc2.type = 'square';
+          osc2.connect(gain2);
+          gain2.connect(audioCtx.destination);
+          
+          osc2.frequency.setValueAtTime(600, audioCtx.currentTime + 0.6);
+          osc2.frequency.setValueAtTime(800, audioCtx.currentTime + 0.7);
+          
+          gain2.gain.setValueAtTime(0, audioCtx.currentTime + 0.6);
+          gain2.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + 0.65);
+          gain2.gain.setValueAtTime(0.1, audioCtx.currentTime + 1.0);
+          gain2.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1.05);
+          
+          osc2.start(audioCtx.currentTime + 0.6);
+          osc2.stop(audioCtx.currentTime + 1.05);
+        }
+      };
+
+      playTone();
+      ringInterval = setInterval(playTone, isOutgoing ? 3000 : 2000);
+    }
+
+    function stopRingtone() {
+      if (ringInterval) {
+        clearInterval(ringInterval);
+        ringInterval = null;
+      }
+    }
 
     function handleMediaSelection(event) {
       const file = event.target.files[0];
@@ -419,11 +492,19 @@
         document.getElementById('incomingCallType').innerText = data.isVideoCall ? 'Incoming Video Call...' : 'Incoming Audio Call...';
         document.getElementById('incomingAvatar').innerText = (callerName || 'U').charAt(0);
         document.getElementById('incomingCallOverlay').classList.remove('hidden');
+        
+        socket.emit('call_ringing', { receiverId: data.senderId });
+        playRingtone(false);
       });
 
       socket.on('call_answered', async (data) => {
+        stopRingtone();
         document.getElementById('callStatusText').innerText = 'Connected... Establishing connection';
         await createOffer();
+      });
+
+      socket.on('call_ringing', (data) => {
+        document.getElementById('callStatusText').innerText = 'Ringing...';
       });
 
       socket.on('webrtc_offer', async (data) => {
@@ -442,7 +523,8 @@
 
       socket.on('end_call', () => {
         // We received end_call from the other side
-        cleanupCall();
+        stopRingtone();
+        endCall();
       });
 
     }
@@ -681,10 +763,12 @@
       if (isVideoCall) {
         document.getElementById('videoContainer').classList.remove('hidden');
         document.getElementById('audioContainer').classList.add('hidden');
+        document.getElementById('screenShareBtn').classList.remove('hidden');
       } else {
         document.getElementById('videoContainer').classList.add('hidden');
         document.getElementById('audioAvatar').innerText = (receiverName || 'U').charAt(0);
         document.getElementById('audioContainer').classList.remove('hidden');
+        document.getElementById('screenShareBtn').classList.add('hidden');
       }
       
       document.getElementById('activeCallOverlay').classList.remove('hidden');
@@ -693,6 +777,7 @@
       try {
         await setupLocalStream(isVideoCall);
         socket.emit('call_user', { receiverId: callReceiverId, isVideoCall });
+        playRingtone(true);
       } catch (e) {
         document.getElementById('activeCallOverlay').classList.add('hidden');
       }
@@ -707,16 +792,19 @@
       if (myIsVideoCall) {
         document.getElementById('videoContainer').classList.remove('hidden');
         document.getElementById('audioContainer').classList.add('hidden');
+        document.getElementById('screenShareBtn').classList.remove('hidden');
       } else {
         document.getElementById('videoContainer').classList.add('hidden');
         document.getElementById('audioAvatar').innerText = document.getElementById('incomingAvatar').innerText;
         document.getElementById('audioContainer').classList.remove('hidden');
+        document.getElementById('screenShareBtn').classList.add('hidden');
       }
 
       document.getElementById('incomingCallOverlay').classList.add('hidden');
       document.getElementById('activeCallOverlay').classList.remove('hidden');
       document.getElementById('callStatusText').innerText = 'Connecting...';
       
+      stopRingtone();
       try {
         await setupLocalStream(incomingCallData.isVideoCall);
         setupPeerConnection();
@@ -727,6 +815,7 @@
     }
 
     function rejectCall() {
+      stopRingtone();
       if (incomingCallData) {
         socket.emit('end_call', { receiverId: incomingCallData.senderId });
         sendCallSystemMessage(incomingCallData.senderId, `📞 Missed ${incomingCallData.isVideoCall ? 'Video' : 'Audio'} Call`);
@@ -747,8 +836,63 @@
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       socket.emit('webrtc_answer', { receiverId: callReceiverId, answer });
+      
+      document.getElementById('callStatusText').innerText = '00:00'; 
       callStartTime = Date.now();
       isCallConnected = true;
+      
+      if (window.callTimer) clearInterval(window.callTimer);
+      window.callTimer = setInterval(() => {
+        const durationSecs = Math.floor((Date.now() - callStartTime) / 1000);
+        const mins = Math.floor(durationSecs / 60).toString().padStart(2, '0');
+        const secs = (durationSecs % 60).toString().padStart(2, '0');
+        document.getElementById('callStatusText').innerText = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    async function toggleScreenShare() {
+      if (!isScreenSharing) {
+        try {
+          screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+          const screenTrack = screenStream.getVideoTracks()[0];
+          
+          const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(screenTrack);
+          }
+          
+          document.getElementById('localVideo').srcObject = screenStream;
+          isScreenSharing = true;
+          document.getElementById('screenShareBtn').style.background = '#28a745';
+
+          screenTrack.onended = () => {
+            stopScreenShare();
+          };
+        } catch (err) {
+          console.error('Error sharing screen:', err);
+        }
+      } else {
+        stopScreenShare();
+      }
+    }
+
+    function stopScreenShare() {
+      if (!isScreenSharing) return;
+      
+      const videoTrack = localStream.getVideoTracks()[0];
+      const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (sender && videoTrack) {
+        sender.replaceTrack(videoTrack);
+      }
+      
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+      }
+      
+      document.getElementById('localVideo').srcObject = localStream;
+      isScreenSharing = false;
+      document.getElementById('screenShareBtn').style.background = '#0084ff';
     }
 
     async function handleAnswer(answer) {
@@ -768,6 +912,7 @@
     }
 
     function endCall() {
+      stopRingtone();
       if (callReceiverId) {
         socket.emit('end_call', { receiverId: callReceiverId });
         
@@ -785,6 +930,15 @@
         window.callTimer = null;
       }
       stopRecording();
+      
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+      }
+      isScreenSharing = false;
+      const screenShareBtn = document.getElementById('screenShareBtn');
+      if (screenShareBtn) screenShareBtn.style.background = '#0084ff';
+
       if (peerConnection) {
         peerConnection.close();
         peerConnection = null;

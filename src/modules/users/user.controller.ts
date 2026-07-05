@@ -5,7 +5,7 @@ import { UserService } from './user.service';
 import ApiError from '../../shared/errors/ApiError';
 
 const getProfile = catchAsync(async (req: Request, res: Response) => {
-  const userId = req.user?.userId;
+  const userId = (req as any).user?.userId;
   if (!userId) throw new ApiError(401, 'Unauthorized');
 
   const result = await UserService.getUserProfile(userId);
