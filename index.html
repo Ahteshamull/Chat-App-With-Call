@@ -130,14 +130,19 @@
     <div style="font-size: 12px; margin-bottom: 5px; color: #555;">Enter the receiver's User ID to start chatting:</div>
     <input type="text" id="targetId" placeholder="Receiver User ID" value="">
     <button onclick="loadMessages()">Load Messages</button>
-    <div style="margin-top: 10px;">
-      <button class="call-btn" onclick="initiateCall(false)">📞 Audio Call</button>
-      <button class="call-btn" onclick="initiateCall(true)">📹 Video Call</button>
-    </div>
   </div>
 
   <!-- Chat Area -->
   <div class="chat-box">
+    <!-- Chat Header -->
+    <div id="chatHeader" style="display: none; padding: 15px 20px; background: rgba(255,255,255,0.9); backdrop-filter: blur(5px); border-bottom: 1px solid #e1e4e8; justify-content: space-between; align-items: center; border-top-left-radius: 16px; border-top-right-radius: 16px; z-index: 10;">
+      <div style="font-weight: 600; font-size: 1.1rem; color: #333;" id="chatHeaderName">User</div>
+      <div style="display: flex; gap: 10px;">
+        <button class="call-btn" style="margin:0; padding: 8px 15px; background: #0084ff; box-shadow: none;" onclick="initiateCall(false)" title="Audio Call">📞</button>
+        <button class="call-btn" style="margin:0; padding: 8px 15px; background: #0084ff; box-shadow: none;" onclick="initiateCall(true)" title="Video Call">📹</button>
+      </div>
+    </div>
+    
     <div class="messages-container" id="messagesContainer">
       <div style="text-align: center; color: #888; margin-top: 20px;">Login and enter a receiver ID to start</div>
     </div>
@@ -392,6 +397,23 @@
       if (!targetId) return alert('Enter a target ID');
 
       try {
+        // Fetch target user's name
+        let targetName = targetId;
+        try {
+          const usersRes = await fetch(`${API_URL}/users`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const usersData = await usersRes.json();
+          if (usersData.success && usersData.data) {
+            const user = usersData.data.find(u => u._id === targetId);
+            if (user) targetName = user.name;
+          }
+        } catch(e) { console.error('Failed to fetch users', e); }
+
+        document.getElementById('chatHeaderName').innerText = targetName;
+        document.getElementById('chatHeader').style.display = 'flex';
+
+        // Fetch messages
         const res = await fetch(`${API_URL}/messages/${targetId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -744,7 +766,7 @@
 
       let html = `
         <div style="font-size: 11px; color: ${isMine ? '#dcf8c6' : '#888'}; margin-bottom: 2px;">
-          ${isMine ? 'You' : (msg.sender && msg.sender._id ? msg.sender._id : msg.sender)}
+          ${isMine ? 'You' : (msg.sender && msg.sender.name ? msg.sender.name : (msg.sender && msg.sender._id ? msg.sender._id : msg.sender))}
         </div>
         ${msg.content ? `<div>${msg.content}</div>` : ''}
       `;
