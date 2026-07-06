@@ -1,5 +1,8 @@
-// WebRTC Call Logic
+// WebRTC Call Logic — with full debug logging
+console.log('📞 [CALL.JS] ============ call.js loaded ============');
+
 function playRingtone(isOutgoing = false) {
+  console.log('📞 [RINGTONE] Playing ringtone, isOutgoing:', isOutgoing);
   if (!window.audioCtx) window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (window.audioCtx.state === 'suspended') window.audioCtx.resume();
   
@@ -14,24 +17,20 @@ function playRingtone(isOutgoing = false) {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(440, window.audioCtx.currentTime);
       osc.frequency.setValueAtTime(480, window.audioCtx.currentTime);
-      
       gain.gain.setValueAtTime(0, window.audioCtx.currentTime);
       gain.gain.linearRampToValueAtTime(0.3, window.audioCtx.currentTime + 0.1);
       gain.gain.setValueAtTime(0.3, window.audioCtx.currentTime + 1.5);
       gain.gain.linearRampToValueAtTime(0, window.audioCtx.currentTime + 1.6);
-      
       osc.start(window.audioCtx.currentTime);
       osc.stop(window.audioCtx.currentTime + 1.6);
     } else {
       osc.type = 'square';
       osc.frequency.setValueAtTime(600, window.audioCtx.currentTime);
       osc.frequency.setValueAtTime(800, window.audioCtx.currentTime + 0.1);
-      
       gain.gain.setValueAtTime(0, window.audioCtx.currentTime);
       gain.gain.linearRampToValueAtTime(0.1, window.audioCtx.currentTime + 0.05);
       gain.gain.setValueAtTime(0.1, window.audioCtx.currentTime + 0.4);
       gain.gain.linearRampToValueAtTime(0, window.audioCtx.currentTime + 0.45);
-      
       osc.start(window.audioCtx.currentTime);
       osc.stop(window.audioCtx.currentTime + 0.5);
       
@@ -40,15 +39,12 @@ function playRingtone(isOutgoing = false) {
       osc2.type = 'square';
       osc2.connect(gain2);
       gain2.connect(window.audioCtx.destination);
-      
       osc2.frequency.setValueAtTime(600, window.audioCtx.currentTime + 0.6);
       osc2.frequency.setValueAtTime(800, window.audioCtx.currentTime + 0.7);
-      
       gain2.gain.setValueAtTime(0, window.audioCtx.currentTime + 0.6);
       gain2.gain.linearRampToValueAtTime(0.1, window.audioCtx.currentTime + 0.65);
       gain2.gain.setValueAtTime(0.1, window.audioCtx.currentTime + 1.0);
       gain2.gain.linearRampToValueAtTime(0, window.audioCtx.currentTime + 1.05);
-      
       osc2.start(window.audioCtx.currentTime + 0.6);
       osc2.stop(window.audioCtx.currentTime + 1.05);
     }
@@ -59,13 +55,16 @@ function playRingtone(isOutgoing = false) {
 }
 
 function stopRingtone() {
+  console.log('📞 [RINGTONE] Stopping ringtone');
   if (window.ringInterval) {
     clearInterval(window.ringInterval);
     window.ringInterval = null;
   }
 }
 
+// ==================== STEP 1: GET LOCAL MEDIA ====================
 async function setupLocalStream(isVideoCall) {
+  console.log('📞 [STEP-1] ====== setupLocalStream START ====== isVideoCall:', isVideoCall);
   try {
     const constraints = { 
       audio: {
@@ -79,50 +78,77 @@ async function setupLocalStream(isVideoCall) {
         facingMode: 'user'
       } : false 
     };
+    console.log('📞 [STEP-1] getUserMedia constraints:', JSON.stringify(constraints));
     window.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    
+    const audioTracks = window.localStream.getAudioTracks();
+    const videoTracks = window.localStream.getVideoTracks();
+    console.log('📞 [STEP-1] ✅ Local stream obtained!');
+    console.log('📞 [STEP-1]   Audio tracks:', audioTracks.length, audioTracks.map(t => `${t.label} (${t.readyState})`));
+    console.log('📞 [STEP-1]   Video tracks:', videoTracks.length, videoTracks.map(t => `${t.label} (${t.readyState})`));
+    
     const localVideoEl = document.getElementById('localVideo');
     if (localVideoEl) {
       localVideoEl.srcObject = window.localStream;
+      console.log('📞 [STEP-1]   Local video element srcObject set');
+    } else {
+      console.error('📞 [STEP-1] ❌ localVideo element NOT FOUND!');
     }
-    console.log('[Call] Local stream ready. Audio tracks:', window.localStream.getAudioTracks().length, 'Video tracks:', window.localStream.getVideoTracks().length);
   } catch (err) {
-    console.error('[Call] getUserMedia error:', err);
+    console.error('📞 [STEP-1] ❌ getUserMedia FAILED:', err.name, err.message);
     alert('Could not access Camera/Microphone: ' + err.message);
     throw err;
   }
 }
 
+// ==================== STEP 2: CREATE PEER CONNECTION ====================
 function setupPeerConnection() {
+  console.log('📞 [STEP-2] ====== setupPeerConnection START ======');
+  
   // Close existing connection if any
   if (window.peerConnection) {
+    console.log('📞 [STEP-2] Closing existing peerConnection, state was:', window.peerConnection.connectionState);
     window.peerConnection.close();
     window.peerConnection = null;
   }
 
-  console.log('[Call] Creating new RTCPeerConnection with config:', JSON.stringify(window.iceServers));
+  console.log('📞 [STEP-2] ICE servers config:', JSON.stringify(window.iceServers));
   window.peerConnection = new RTCPeerConnection(window.iceServers);
+  console.log('📞 [STEP-2] ✅ RTCPeerConnection created');
   
   // Add local stream tracks to connection
   if (window.localStream) {
-    window.localStream.getTracks().forEach(track => {
-      console.log('[Call] Adding local track:', track.kind, track.label);
+    const tracks = window.localStream.getTracks();
+    console.log('📞 [STEP-2] Adding', tracks.length, 'local tracks to peer connection:');
+    tracks.forEach((track, i) => {
+      console.log(`📞 [STEP-2]   Track ${i}: kind=${track.kind}, label=${track.label}, enabled=${track.enabled}, readyState=${track.readyState}`);
       window.peerConnection.addTrack(track, window.localStream);
     });
+    console.log('📞 [STEP-2] ✅ All local tracks added');
   } else {
-    console.warn('[Call] No local stream when setting up peer connection!');
+    console.error('📞 [STEP-2] ❌ NO LOCAL STREAM! Tracks cannot be added!');
   }
 
   // Handle incoming remote stream
   window.peerConnection.ontrack = (event) => {
-    console.log('[Call] Remote track received:', event.track.kind, 'readyState:', event.track.readyState);
+    console.log('📞 [REMOTE-TRACK] ====== Remote track received ======');
+    console.log('📞 [REMOTE-TRACK]   kind:', event.track.kind);
+    console.log('📞 [REMOTE-TRACK]   readyState:', event.track.readyState);
+    console.log('📞 [REMOTE-TRACK]   enabled:', event.track.enabled);
+    console.log('📞 [REMOTE-TRACK]   muted:', event.track.muted);
+    console.log('📞 [REMOTE-TRACK]   streams count:', event.streams ? event.streams.length : 0);
     
     const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+    console.log('📞 [REMOTE-TRACK]   Using stream with', stream.getTracks().length, 'tracks');
     
     if (event.track.kind === 'video') {
       const videoElement = document.getElementById('remoteVideo');
       if (videoElement) {
         videoElement.srcObject = stream;
-        videoElement.play().catch(e => console.log('[Call] Remote video play error (usually autoplay policy):', e));
+        videoElement.play().catch(e => console.warn('📞 [REMOTE-TRACK] ⚠️ Remote video autoplay blocked:', e.message));
+        console.log('📞 [REMOTE-TRACK] ✅ Remote VIDEO set to remoteVideo element');
+      } else {
+        console.error('📞 [REMOTE-TRACK] ❌ remoteVideo element NOT FOUND!');
       }
     }
     
@@ -130,7 +156,10 @@ function setupPeerConnection() {
       const audioElement = document.getElementById('remoteAudio');
       if (audioElement) {
         audioElement.srcObject = stream;
-        audioElement.play().catch(e => console.log('[Call] Remote audio play error:', e));
+        audioElement.play().catch(e => console.warn('📞 [REMOTE-TRACK] ⚠️ Remote audio autoplay blocked:', e.message));
+        console.log('📞 [REMOTE-TRACK] ✅ Remote AUDIO set to remoteAudio element');
+      } else {
+        console.error('📞 [REMOTE-TRACK] ❌ remoteAudio element NOT FOUND!');
       }
     }
     
@@ -150,66 +179,89 @@ function setupPeerConnection() {
   // Send ICE candidates to peer
   window.peerConnection.onicecandidate = (event) => {
     if (event.candidate && window.socket) {
-      console.log('[Call] Sending ICE candidate:', event.candidate.type, event.candidate.protocol);
+      console.log('📞 [ICE-OUT] Sending ICE candidate:', event.candidate.type || 'unknown', event.candidate.protocol || '', event.candidate.address || '');
       window.socket.emit('webrtc_ice_candidate', { receiverId: window.callReceiverId, candidate: event.candidate });
     } else if (!event.candidate) {
-      console.log('[Call] ICE gathering complete');
+      console.log('📞 [ICE-OUT] ✅ ICE gathering complete (null candidate)');
     }
   };
 
   // Monitor ICE connection state
   window.peerConnection.oniceconnectionstatechange = () => {
     const state = window.peerConnection ? window.peerConnection.iceConnectionState : 'null';
-    console.log('[Call] ICE connection state:', state);
+    console.log('📞 [ICE-STATE] ICE connection state changed to:', state);
     
-    if (state === 'failed') {
-      console.log('[Call] ICE failed, attempting restart...');
+    if (state === 'checking') {
+      console.log('📞 [ICE-STATE]   ⏳ Checking connectivity...');
+    } else if (state === 'connected') {
+      console.log('📞 [ICE-STATE]   ✅ ICE connected! Media should be flowing.');
+    } else if (state === 'completed') {
+      console.log('📞 [ICE-STATE]   ✅ ICE completed! Best candidate pair selected.');
+    } else if (state === 'failed') {
+      console.error('📞 [ICE-STATE]   ❌ ICE FAILED! Cannot establish connection. This usually means:');
+      console.error('📞 [ICE-STATE]      - Both peers are behind symmetric NAT (need TURN server)');
+      console.error('📞 [ICE-STATE]      - Firewall is blocking UDP traffic');
+      console.error('📞 [ICE-STATE]      - STUN server is unreachable');
       // Try ICE restart
       if (window.peerConnection && window.callReceiverId) {
+        console.log('📞 [ICE-STATE]   🔄 Attempting ICE restart...');
         window.peerConnection.restartIce();
       }
     } else if (state === 'disconnected') {
-      console.log('[Call] ICE disconnected, waiting for recovery...');
-      // Give it a few seconds to recover before ending
+      console.warn('📞 [ICE-STATE]   ⚠️ ICE disconnected, waiting for recovery...');
       setTimeout(() => {
         if (window.peerConnection && window.peerConnection.iceConnectionState === 'disconnected') {
-          console.log('[Call] ICE still disconnected after timeout');
+          console.error('📞 [ICE-STATE]   ❌ ICE still disconnected after 5s timeout');
         }
       }, 5000);
+    } else if (state === 'closed') {
+      console.log('📞 [ICE-STATE]   Connection closed');
     }
   };
 
   // Monitor overall connection state
   window.peerConnection.onconnectionstatechange = () => {
     const state = window.peerConnection ? window.peerConnection.connectionState : 'null';
-    console.log('[Call] Connection state:', state);
+    console.log('📞 [CONN-STATE] Connection state changed to:', state);
     
     if (state === 'connected') {
-      console.log('[Call] ✅ Peer connection established successfully!');
+      console.log('📞 [CONN-STATE] ✅✅✅ PEER CONNECTION ESTABLISHED SUCCESSFULLY! ✅✅✅');
       attemptStartCallRecording();
     } else if (state === 'failed') {
-      console.log('[Call] ❌ Connection failed');
+      console.error('📞 [CONN-STATE] ❌❌❌ CONNECTION FAILED ❌❌❌');
       document.getElementById('callStatusText').innerText = 'Connection failed...';
+    } else if (state === 'connecting') {
+      console.log('📞 [CONN-STATE] ⏳ Connecting...');
     }
   };
 
   // Monitor ICE gathering state
   window.peerConnection.onicegatheringstatechange = () => {
-    console.log('[Call] ICE gathering state:', window.peerConnection ? window.peerConnection.iceGatheringState : 'null');
+    const state = window.peerConnection ? window.peerConnection.iceGatheringState : 'null';
+    console.log('📞 [ICE-GATHER] Gathering state:', state);
   };
 
   // Monitor signaling state
   window.peerConnection.onsignalingstatechange = () => {
-    console.log('[Call] Signaling state:', window.peerConnection ? window.peerConnection.signalingState : 'null');
+    const state = window.peerConnection ? window.peerConnection.signalingState : 'null';
+    console.log('📞 [SIGNAL] Signaling state:', state);
   };
+  
+  console.log('📞 [STEP-2] ====== setupPeerConnection DONE ======');
 }
 
+// ==================== CALLER: INITIATE CALL ====================
 async function initiateCall(isVideoCall) {
+  console.log('📞 [CALLER] ====== initiateCall START ====== isVideoCall:', isVideoCall);
   window.callReceiverId = document.getElementById('targetId').value;
-  if (!window.callReceiverId) return alert('Select a contact to call!');
+  if (!window.callReceiverId) {
+    console.error('📞 [CALLER] ❌ No target selected!');
+    return alert('Select a contact to call!');
+  }
   
   const receiver = window.allUsers.find(u => u._id === window.callReceiverId);
   const receiverName = receiver ? receiver.name : window.callReceiverId;
+  console.log('📞 [CALLER] Calling:', receiverName, '(ID:', window.callReceiverId, ')');
   
   window.myIsVideoCall = isVideoCall;
   
@@ -229,28 +281,40 @@ async function initiateCall(isVideoCall) {
   document.getElementById('callStatusText').innerText = `Calling ${receiverName}...`;
   
   try {
+    // STEP 1: Get local media
     await setupLocalStream(isVideoCall);
+    
+    // STEP: Emit call signal
     if (window.socket) {
-      console.log('[Call] Emitting call_user to:', window.callReceiverId, 'isVideo:', isVideoCall);
+      console.log('📞 [CALLER] Socket connected:', window.socket.connected, 'ID:', window.socket.id);
+      console.log('📞 [CALLER] Emitting call_user -> receiverId:', window.callReceiverId, 'isVideo:', isVideoCall);
       window.socket.emit('call_user', { receiverId: window.callReceiverId, isVideoCall });
+      console.log('📞 [CALLER] ✅ call_user emitted! Waiting for call_answered...');
+    } else {
+      console.error('📞 [CALLER] ❌ SOCKET IS NULL! Cannot emit call_user!');
     }
     playRingtone(true);
   } catch (e) {
-    console.error('[Call] initiateCall error:', e);
+    console.error('📞 [CALLER] ❌ initiateCall FAILED:', e);
     document.getElementById('activeCallOverlay').classList.add('hidden');
   }
 }
 
+// ==================== RECEIVER: ACCEPT CALL ====================
 async function acceptCall() {
+  console.log('📞 [RECEIVER] ====== acceptCall START ======');
   if (window.activeCallNotification) {
     window.activeCallNotification.close();
     window.activeCallNotification = null;
   }
-  if (!window.incomingCallData) return;
+  if (!window.incomingCallData) {
+    console.error('📞 [RECEIVER] ❌ No incomingCallData!');
+    return;
+  }
   window.callReceiverId = window.incomingCallData.senderId;
   window.myIsVideoCall = window.incomingCallData.isVideoCall;
   
-  console.log('[Call] Accepting call from:', window.callReceiverId, 'isVideo:', window.myIsVideoCall);
+  console.log('📞 [RECEIVER] Accepting call from:', window.callReceiverId, 'isVideo:', window.myIsVideoCall);
   
   // Update UI for video/audio mode
   if (window.myIsVideoCall) {
@@ -270,19 +334,29 @@ async function acceptCall() {
   
   stopRingtone();
   try {
+    // STEP 1: Get local media
     await setupLocalStream(window.incomingCallData.isVideoCall);
+    
+    // STEP 2: Create peer connection
     setupPeerConnection();
+    
+    // STEP: Emit answer signal (this tells caller to createOffer)
     if (window.socket) {
-      console.log('[Call] Emitting answer_call to:', window.callReceiverId);
+      console.log('📞 [RECEIVER] Socket connected:', window.socket.connected, 'ID:', window.socket.id);
+      console.log('📞 [RECEIVER] Emitting answer_call -> receiverId:', window.callReceiverId);
       window.socket.emit('answer_call', { receiverId: window.callReceiverId });
+      console.log('📞 [RECEIVER] ✅ answer_call emitted! Waiting for webrtc_offer...');
+    } else {
+      console.error('📞 [RECEIVER] ❌ SOCKET IS NULL! Cannot emit answer_call!');
     }
   } catch (e) {
-    console.error('[Call] acceptCall error:', e);
+    console.error('📞 [RECEIVER] ❌ acceptCall FAILED:', e);
     rejectCall();
   }
 }
 
 function rejectCall() {
+  console.log('📞 [RECEIVER] Rejecting call');
   if (window.activeCallNotification) {
     window.activeCallNotification.close();
     window.activeCallNotification = null;
@@ -298,46 +372,68 @@ function rejectCall() {
   document.getElementById('incomingCallOverlay').classList.add('hidden');
 }
 
+// ==================== STEP 3 (CALLER): CREATE OFFER ====================
 async function createOffer() {
+  console.log('📞 [STEP-3 CALLER] ====== createOffer START ======');
   try {
+    // STEP 2: Create peer connection (caller side)
     setupPeerConnection();
+    
+    console.log('📞 [STEP-3 CALLER] Creating offer with offerToReceiveAudio:true, offerToReceiveVideo:', window.myIsVideoCall);
     const offer = await window.peerConnection.createOffer({ 
       offerToReceiveAudio: true, 
       offerToReceiveVideo: window.myIsVideoCall 
     });
-    console.log('[Call] Created offer, setting local description');
+    console.log('📞 [STEP-3 CALLER] ✅ Offer created, type:', offer.type);
+    console.log('📞 [STEP-3 CALLER] SDP preview (first 200 chars):', offer.sdp.substring(0, 200));
+    
+    console.log('📞 [STEP-3 CALLER] Setting local description...');
     await window.peerConnection.setLocalDescription(offer);
+    console.log('📞 [STEP-3 CALLER] ✅ Local description set, signaling state:', window.peerConnection.signalingState);
+    
     if (window.socket) {
-      console.log('[Call] Sending offer to:', window.callReceiverId);
+      console.log('📞 [STEP-3 CALLER] Sending offer to:', window.callReceiverId);
       window.socket.emit('webrtc_offer', { receiverId: window.callReceiverId, offer });
+      console.log('📞 [STEP-3 CALLER] ✅ Offer sent! Waiting for webrtc_answer...');
+    } else {
+      console.error('📞 [STEP-3 CALLER] ❌ SOCKET IS NULL!');
     }
   } catch (e) {
-    console.error('[Call] createOffer error:', e);
+    console.error('📞 [STEP-3 CALLER] ❌ createOffer FAILED:', e);
   }
 }
 
+// ==================== STEP 4 (RECEIVER): HANDLE OFFER ====================
 async function handleOffer(offer) {
+  console.log('📞 [STEP-4 RECEIVER] ====== handleOffer START ======');
   try {
     if (!window.peerConnection) {
-      console.warn('[Call] No peer connection when receiving offer, creating one...');
+      console.warn('📞 [STEP-4 RECEIVER] ⚠️ No peer connection exists, creating one...');
       setupPeerConnection();
     }
     
-    // Check signaling state before setting remote description
-    if (window.peerConnection.signalingState !== 'stable' && window.peerConnection.signalingState !== 'have-local-offer') {
-      console.warn('[Call] Unexpected signaling state for offer:', window.peerConnection.signalingState);
-    }
+    console.log('📞 [STEP-4 RECEIVER] Current signaling state:', window.peerConnection.signalingState);
+    console.log('📞 [STEP-4 RECEIVER] Offer type:', offer.type);
+    console.log('📞 [STEP-4 RECEIVER] Offer SDP preview (first 200 chars):', offer.sdp ? offer.sdp.substring(0, 200) : 'NO SDP!');
     
-    console.log('[Call] Setting remote description (offer), current signaling state:', window.peerConnection.signalingState);
+    console.log('📞 [STEP-4 RECEIVER] Setting remote description (offer)...');
     await window.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    console.log('📞 [STEP-4 RECEIVER] ✅ Remote description set, signaling state:', window.peerConnection.signalingState);
     
+    console.log('📞 [STEP-4 RECEIVER] Creating answer...');
     const answer = await window.peerConnection.createAnswer();
-    console.log('[Call] Created answer, setting local description');
+    console.log('📞 [STEP-4 RECEIVER] ✅ Answer created, type:', answer.type);
+    
+    console.log('📞 [STEP-4 RECEIVER] Setting local description (answer)...');
     await window.peerConnection.setLocalDescription(answer);
+    console.log('📞 [STEP-4 RECEIVER] ✅ Local description set, signaling state:', window.peerConnection.signalingState);
     
     if (window.socket) {
-      console.log('[Call] Sending answer to:', window.callReceiverId);
+      console.log('📞 [STEP-4 RECEIVER] Sending answer to:', window.callReceiverId);
       window.socket.emit('webrtc_answer', { receiverId: window.callReceiverId, answer });
+      console.log('📞 [STEP-4 RECEIVER] ✅ Answer sent!');
+    } else {
+      console.error('📞 [STEP-4 RECEIVER] ❌ SOCKET IS NULL!');
     }
     
     // Process queued ICE candidates now that remote description is set
@@ -346,6 +442,7 @@ async function handleOffer(offer) {
     document.getElementById('callStatusText').innerText = '00:00'; 
     window.callStartTime = Date.now();
     window.isCallConnected = true;
+    console.log('📞 [STEP-4 RECEIVER] ✅ Call marked as connected! Timer started.');
     
     if (window.callTimer) clearInterval(window.callTimer);
     window.callTimer = setInterval(() => {
@@ -355,10 +452,74 @@ async function handleOffer(offer) {
       document.getElementById('callStatusText').innerText = `${mins}:${secs}`;
     }, 1000);
   } catch (e) {
-    console.error('[Call] handleOffer error:', e);
+    console.error('📞 [STEP-4 RECEIVER] ❌ handleOffer FAILED:', e);
+    console.error('📞 [STEP-4 RECEIVER] Error name:', e.name, 'message:', e.message);
   }
 }
 
+// ==================== STEP 5 (CALLER): HANDLE ANSWER ====================
+async function handleAnswer(answer) {
+  console.log('📞 [STEP-5 CALLER] ====== handleAnswer START ======');
+  try {
+    if (!window.peerConnection) {
+      console.error('📞 [STEP-5 CALLER] ❌ NO PEER CONNECTION! Cannot set answer.');
+      return;
+    }
+    console.log('📞 [STEP-5 CALLER] Current signaling state:', window.peerConnection.signalingState);
+    console.log('📞 [STEP-5 CALLER] Answer type:', answer.type);
+    
+    console.log('📞 [STEP-5 CALLER] Setting remote description (answer)...');
+    await window.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    console.log('📞 [STEP-5 CALLER] ✅ Remote description set, signaling state:', window.peerConnection.signalingState);
+    
+    // Process queued ICE candidates
+    await processIceQueue();
+    
+    document.getElementById('callStatusText').innerText = '00:00'; 
+    window.callStartTime = Date.now();
+    window.isCallConnected = true;
+    console.log('📞 [STEP-5 CALLER] ✅ Call marked as connected! Timer started.');
+    
+    if (window.callTimer) clearInterval(window.callTimer);
+    window.callTimer = setInterval(() => {
+      const durationSecs = Math.floor((Date.now() - window.callStartTime) / 1000);
+      const mins = Math.floor(durationSecs / 60).toString().padStart(2, '0');
+      const secs = (durationSecs % 60).toString().padStart(2, '0');
+      document.getElementById('callStatusText').innerText = `${mins}:${secs}`;
+    }, 1000);
+  } catch (e) {
+    console.error('📞 [STEP-5 CALLER] ❌ handleAnswer FAILED:', e);
+    console.error('📞 [STEP-5 CALLER] Error name:', e.name, 'message:', e.message);
+  }
+}
+
+// ==================== ICE CANDIDATE QUEUE ====================
+async function processIceQueue() {
+  const count = window.iceCandidateQueue.length;
+  console.log('📞 [ICE-QUEUE] Processing queued ICE candidates, count:', count);
+  
+  if (count === 0) {
+    console.log('📞 [ICE-QUEUE] No queued candidates to process');
+    return;
+  }
+  
+  const queue = [...window.iceCandidateQueue];
+  window.iceCandidateQueue = [];
+  
+  let success = 0, failed = 0;
+  for (const candidate of queue) {
+    try { 
+      await window.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      success++;
+    } catch (e) { 
+      failed++;
+      console.error('📞 [ICE-QUEUE] ❌ Failed to add queued candidate:', e.message); 
+    }
+  }
+  console.log(`📞 [ICE-QUEUE] Done. Added: ${success}, Failed: ${failed}`);
+}
+
+// ==================== SCREEN SHARE ====================
 async function toggleScreenShare() {
   if (!window.isScreenSharing) {
     try {
@@ -404,51 +565,9 @@ function stopScreenShare() {
   document.getElementById('screenShareBtn').style.background = '#0084ff';
 }
 
-async function handleAnswer(answer) {
-  try {
-    if (!window.peerConnection) {
-      console.error('[Call] No peer connection when receiving answer!');
-      return;
-    }
-    console.log('[Call] Setting remote description (answer), current signaling state:', window.peerConnection.signalingState);
-    await window.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    
-    // Process queued ICE candidates
-    await processIceQueue();
-    
-    document.getElementById('callStatusText').innerText = '00:00'; 
-    window.callStartTime = Date.now();
-    window.isCallConnected = true;
-    
-    if (window.callTimer) clearInterval(window.callTimer);
-    window.callTimer = setInterval(() => {
-      const durationSecs = Math.floor((Date.now() - window.callStartTime) / 1000);
-      const mins = Math.floor(durationSecs / 60).toString().padStart(2, '0');
-      const secs = (durationSecs % 60).toString().padStart(2, '0');
-      document.getElementById('callStatusText').innerText = `${mins}:${secs}`;
-    }, 1000);
-  } catch (e) {
-    console.error('[Call] handleAnswer error:', e);
-  }
-}
-
-async function processIceQueue() {
-  console.log('[Call] Processing ICE queue, count:', window.iceCandidateQueue.length);
-  const queue = [...window.iceCandidateQueue];
-  window.iceCandidateQueue = [];
-  
-  for (const candidate of queue) {
-    try { 
-      await window.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      console.log('[Call] Added queued ICE candidate');
-    } catch (e) { 
-      console.error('[Call] Failed to add queued ICE candidate:', e); 
-    }
-  }
-}
-
+// ==================== END CALL ====================
 function endCall(isInitiator = true) {
-  console.log('[Call] Ending call, isInitiator:', isInitiator);
+  console.log('📞 [END] ====== endCall ====== isInitiator:', isInitiator);
   if (window.activeCallNotification) {
     window.activeCallNotification.close();
     window.activeCallNotification = null;
@@ -483,6 +602,7 @@ function endCall(isInitiator = true) {
   if (screenShareBtn) screenShareBtn.style.background = '#0084ff';
 
   if (window.peerConnection) {
+    console.log('📞 [END] Closing peer connection, last states - connection:', window.peerConnection.connectionState, 'ICE:', window.peerConnection.iceConnectionState, 'signaling:', window.peerConnection.signalingState);
     window.peerConnection.ontrack = null;
     window.peerConnection.onicecandidate = null;
     window.peerConnection.oniceconnectionstatechange = null;
@@ -511,8 +631,10 @@ function endCall(isInitiator = true) {
   document.getElementById('localVideo').srcObject = null;
   const audioEl = document.getElementById('remoteAudio');
   if (audioEl) audioEl.srcObject = null;
+  console.log('📞 [END] ✅ Call ended, all cleaned up');
 }
 
+// ==================== CALL RECORDING ====================
 function attemptStartCallRecording() {
   if (window.callRecorder || window.isRecordingCall) return;
   if (!window.remoteStream) return;
@@ -532,7 +654,6 @@ function attemptStartCallRecording() {
   startRecording();
 }
 
-// Call Recording Logic
 function startRecording() {
   if (!window.remoteStream || window.remoteStream.getTracks().length === 0) return;
   window.recordedChunks = [];
@@ -540,27 +661,21 @@ function startRecording() {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const destination = audioContext.createMediaStreamDestination();
 
-    // Mix local audio
     if (window.localStream && window.localStream.getAudioTracks().length > 0) {
       const localSource = audioContext.createMediaStreamSource(new MediaStream([window.localStream.getAudioTracks()[0]]));
       localSource.connect(destination);
     }
-
-    // Mix remote audio
     if (window.remoteStream && window.remoteStream.getAudioTracks().length > 0) {
       const remoteSource = audioContext.createMediaStreamSource(new MediaStream([window.remoteStream.getAudioTracks()[0]]));
       remoteSource.connect(destination);
     }
 
     const combinedTracks = [...destination.stream.getAudioTracks()];
-    // Add video track if it exists
     if (window.remoteStream.getVideoTracks().length > 0) {
       combinedTracks.push(window.remoteStream.getVideoTracks()[0]);
     }
-
     const finalStream = new MediaStream(combinedTracks);
     
-    // Ensure supported mime type based on audio/video tracks presence
     let options = {};
     if (window.remoteStream.getVideoTracks().length > 0) {
       options = { mimeType: 'video/webm' };
@@ -575,11 +690,9 @@ function startRecording() {
     }
     
     window.callRecorder = new MediaRecorder(finalStream, options);
-
     window.callRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) window.recordedChunks.push(e.data);
     };
-
     window.callRecorder.onstop = () => {
       if (window.recordedChunks.length === 0) return;
       const blob = new Blob(window.recordedChunks, { type: window.callRecorder.mimeType });
@@ -596,7 +709,6 @@ function startRecording() {
       }, 100);
       window.recordedChunks = [];
     };
-
     window.callRecorder.start();
   } catch (err) {
     console.error("Recording setup failed", err);
@@ -643,17 +755,15 @@ window.showCallNotification = function(callerName, isVideoCall) {
       tag: 'incoming-call',
       requireInteraction: true
     });
-
     notification.onclick = () => {
       window.focus();
       notification.close();
     };
-
     window.activeCallNotification = notification;
   }
 };
 
-// Explicitly expose all call functions to window for cross-file access
+// ==================== EXPOSE ALL FUNCTIONS TO WINDOW ====================
 window.playRingtone = playRingtone;
 window.stopRingtone = stopRingtone;
 window.setupLocalStream = setupLocalStream;
@@ -672,3 +782,9 @@ window.attemptStartCallRecording = attemptStartCallRecording;
 window.startRecording = startRecording;
 window.stopRecording = stopRecording;
 window.sendCallSystemMessage = sendCallSystemMessage;
+
+console.log('📞 [CALL.JS] ✅ All call functions exposed to window:', 
+  ['playRingtone', 'stopRingtone', 'initiateCall', 'acceptCall', 'createOffer', 'handleOffer', 'handleAnswer', 'endCall']
+    .map(fn => `${fn}: ${typeof window[fn]}`)
+    .join(', ')
+);

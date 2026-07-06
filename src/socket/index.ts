@@ -81,36 +81,43 @@ export const initSocket = (server: HttpServer) => {
     // WebRTC Signaling
     socket.on('call_user', ({ receiverId, isVideoCall }: { receiverId: string, isVideoCall: boolean }) => {
       const senderId = socket.data.user.userId.toString();
+      console.log(`[WebRTC] call_user: ${senderId} -> ${receiverId}, isVideo: ${isVideoCall}`);
       socket.to(receiverId).emit('incoming_call', { senderId, isVideoCall });
     });
 
     socket.on('answer_call', ({ receiverId }: { receiverId: string }) => {
       const senderId = socket.data.user.userId.toString();
+      console.log(`[WebRTC] answer_call: ${senderId} -> ${receiverId}`);
       socket.to(receiverId).emit('call_answered', { senderId });
     });
 
     socket.on('call_ringing', ({ receiverId }: { receiverId: string }) => {
       const senderId = socket.data.user.userId.toString();
+      console.log(`[WebRTC] call_ringing: ${senderId} -> ${receiverId}`);
       socket.to(receiverId).emit('call_ringing', { senderId });
     });
 
     socket.on('webrtc_offer', ({ receiverId, offer }: { receiverId: string, offer: any }) => {
       const senderId = socket.data.user.userId.toString();
+      console.log(`[WebRTC] webrtc_offer: ${senderId} -> ${receiverId}, offer type: ${offer?.type}`);
       socket.to(receiverId).emit('webrtc_offer', { senderId, offer });
     });
 
     socket.on('webrtc_answer', ({ receiverId, answer }: { receiverId: string, answer: any }) => {
       const senderId = socket.data.user.userId.toString();
+      console.log(`[WebRTC] webrtc_answer: ${senderId} -> ${receiverId}, answer type: ${answer?.type}`);
       socket.to(receiverId).emit('webrtc_answer', { senderId, answer });
     });
 
     socket.on('webrtc_ice_candidate', ({ receiverId, candidate }: { receiverId: string, candidate: any }) => {
       const senderId = socket.data.user.userId.toString();
+      console.log(`[WebRTC] ice_candidate: ${senderId} -> ${receiverId}, candidate: ${candidate?.candidate?.substring(0, 50)}...`);
       socket.to(receiverId).emit('webrtc_ice_candidate', { senderId, candidate });
     });
 
     socket.on('end_call', ({ receiverId }: { receiverId: string }) => {
       const senderId = socket.data.user.userId.toString();
+      console.log(`[WebRTC] end_call: ${senderId} -> ${receiverId}`);
       socket.to(receiverId).emit('end_call', { senderId });
     });
 
