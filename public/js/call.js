@@ -179,7 +179,15 @@ function setupPeerConnection() {
   // Send ICE candidates to peer
   window.peerConnection.onicecandidate = (event) => {
     if (event.candidate && window.socket) {
-      console.log('📞 [ICE-OUT] Sending ICE candidate:', event.candidate.type || 'unknown', event.candidate.protocol || '', event.candidate.address || '');
+      const c = event.candidate;
+      const type = c.type || 'unknown';
+      const proto = c.protocol || '';
+      const addr = c.address || '';
+      const relayProto = c.relatedAddress ? ` (relayed via ${c.relatedAddress})` : '';
+      console.log(`📞 [ICE-OUT] Sending ICE candidate: ${type} ${proto} ${addr}${relayProto}`);
+      if (type === 'relay') {
+        console.log('📞 [ICE-OUT] 🎉 TURN/RELAY candidate generated! TURN server is working!');
+      }
       window.socket.emit('webrtc_ice_candidate', { receiverId: window.callReceiverId, candidate: event.candidate });
     } else if (!event.candidate) {
       console.log('📞 [ICE-OUT] ✅ ICE gathering complete (null candidate)');
