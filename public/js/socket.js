@@ -55,6 +55,7 @@ function initSocket() {
   
   // WebRTC Socket Listeners
   window.socket.on('incoming_call', (data) => {
+    console.log('[Socket] Incoming call from:', data.senderId, 'isVideo:', data.isVideoCall);
     window.incomingCallData = data;
     const caller = window.allUsers.find(u => u._id === data.senderId);
     const callerName = caller ? caller.name : data.senderId;
@@ -74,12 +75,15 @@ function initSocket() {
   });
 
   window.socket.on('call_answered', async (data) => {
+    console.log('[Socket] Call answered by:', data.senderId);
     if (typeof window.stopRingtone === 'function') {
       window.stopRingtone();
     }
     document.getElementById('callStatusText').innerText = 'Connected... Establishing connection';
     if (typeof window.createOffer === 'function') {
       await window.createOffer();
+    } else {
+      console.error('[Socket] createOffer function not available!');
     }
   });
 
@@ -88,25 +92,36 @@ function initSocket() {
   });
 
   window.socket.on('webrtc_offer', async (data) => {
+    console.log('[Socket] Received WebRTC offer from:', data.senderId);
     if (typeof window.handleOffer === 'function') {
       await window.handleOffer(data.offer);
+    } else {
+      console.error('[Socket] handleOffer function not available!');
     }
   });
 
   window.socket.on('webrtc_answer', async (data) => {
+    console.log('[Socket] Received WebRTC answer from:', data.senderId);
     if (typeof window.handleAnswer === 'function') {
       await window.handleAnswer(data.answer);
+    } else {
+      console.error('[Socket] handleAnswer function not available!');
     }
   });
 
   window.socket.on('webrtc_ice_candidate', async (data) => {
-    if (window.peerConnection && window.peerConnection.remoteDescription) {
+    console.log('[Socket] Received ICE candidate, peerConnection exists:', !!window.peerConnection, 
+      'remoteDescription set:', !!(window.peerConnection && window.peerConnection.remoteDescription));
+    
+    if (window.peerConnection && window.peerConnection.remoteDescription && window.peerConnection.remoteDescription.type) {
       try { 
-        await window.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); 
+        await window.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        console.log('[Socket] Added ICE candidate directly');
       } catch (e) {
-        console.error('ICE err', e);
+        console.error('[Socket] ICE candidate add error:', e);
       }
     } else {
+      console.log('[Socket] Queuing ICE candidate (remote description not yet set)');
       window.iceCandidateQueue.push(data.candidate);
     }
   });
