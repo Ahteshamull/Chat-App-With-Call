@@ -289,6 +289,11 @@ async function initiateCall(isVideoCall) {
   document.getElementById('callStatusText').innerText = `Calling ${receiverName}...`;
   
   try {
+    // STEP 0: Fetch fresh TURN credentials
+    if (typeof window.fetchTurnCredentials === 'function') {
+      await window.fetchTurnCredentials();
+    }
+    
     // STEP 1: Get local media
     await setupLocalStream(isVideoCall);
     
@@ -342,6 +347,11 @@ async function acceptCall() {
   
   stopRingtone();
   try {
+    // STEP 0: Fetch fresh TURN credentials
+    if (typeof window.fetchTurnCredentials === 'function') {
+      await window.fetchTurnCredentials();
+    }
+    
     // STEP 1: Get local media
     await setupLocalStream(window.incomingCallData.isVideoCall);
     

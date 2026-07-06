@@ -21,33 +21,38 @@ window.isCallConnected = false;
 window.myIsVideoCall = false; // To track if we initiated a video or audio call
 window.callRecorder = null;
 window.recordedChunks = [];
+// Default ICE config (STUN only - will be upgraded with TURN from server)
 window.iceServers = { 
       iceServers: [
-        // Free STUN servers
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        // Free TURN servers (open-source, part of WebRTC ICE framework)
-        // Required for NAT traversal when peers are behind symmetric NAT
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
+        { urls: 'stun:stun4.l.google.com:19302' }
       ] 
     };
+
+// Fetch TURN credentials from server (metered.ca free API)
+window.fetchTurnCredentials = async function() {
+  try {
+    console.log('🔑 [TURN] Fetching TURN credentials from server...');
+    const res = await fetch(`${window.API_URL}/turn-credentials`);
+    const data = await res.json();
+    
+    if (data.success && data.iceServers && data.iceServers.length > 0) {
+      window.iceServers = { iceServers: data.iceServers };
+      const turnCount = data.iceServers.filter(s => s.urls && s.urls.toString().includes('turn')).length;
+      console.log('🔑 [TURN] ✅ Got', data.iceServers.length, 'servers (' + turnCount + ' TURN servers)');
+      if (turnCount === 0) {
+        console.warn('🔑 [TURN] ⚠️ No TURN servers! Calls may fail behind NAT. Add METERED_API_KEY and METERED_APP_NAME to .env');
+      }
+    } else {
+      console.warn('🔑 [TURN] ⚠️ No ICE servers from API, using defaults');
+    }
+  } catch (err) {
+    console.error('🔑 [TURN] ❌ Failed to fetch TURN credentials:', err.message);
+  }
+};
 window.isScreenSharing = false;
 window.screenStream = null;
 window.iceCandidateQueue = [];
