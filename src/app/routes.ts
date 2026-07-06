@@ -48,8 +48,9 @@ router.get('/turn-credentials', async (req, res) => {
       }
     }
     
-    // Fallback: return STUN-only config
-    console.log('[TURN] No metered.ca config, returning STUN-only');
+    // Fallback: return our self-hosted coturn server credentials pointing to the request host
+    const host = req.get('host')?.split(':')[0] || process.env.PUBLIC_IP || '127.0.0.1';
+    console.log('[TURN] No metered.ca config, returning self-hosted TURN pointing to:', host);
     res.json({
       success: true,
       iceServers: [
@@ -58,6 +59,16 @@ router.get('/turn-credentials', async (req, res) => {
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
+        {
+          urls: `turn:${host}:3478`,
+          username: 'chatuser',
+          credential: 'chatpassword123'
+        },
+        {
+          urls: `turn:${host}:3478?transport=tcp`,
+          username: 'chatuser',
+          credential: 'chatpassword123'
+        }
       ]
     });
   } catch (error) {
